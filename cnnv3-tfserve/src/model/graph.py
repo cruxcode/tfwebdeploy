@@ -7,6 +7,11 @@ except Exception: #ImportError
     import preprocess
 
 import os
+from tensorflow.python.saved_model import builder as saved_model_builder
+from tensorflow.python.saved_model import signature_constants
+from tensorflow.python.saved_model import signature_def_utils
+from tensorflow.python.saved_model import tag_constants
+from tensorflow.python.saved_model import utils
 
 image_dir = os.path.join("src", "images")
 graph_dir = os.path.join("src", "model", "inception_v3_2016_08_28_frozen.pb")
@@ -43,7 +48,26 @@ class model(object):
 
     def get_label(self, filename, new_size):
         probs = self.run(filename, new_size)
-        return self._labels[np.argmax(probs)], np.max(probs) 
+        return self._labels[np.argmax(probs)], np.max(probs)
+
+    def save_graph(self):
+        if self._input_op is not None and self._output_op is not None:
+            export_path = os.path.join("src", "model", "export", "1") #model version is 1
+            print("exporting model to " + export_path)
+            builder = saved_model_builder.SavedModelBuilder(export_path)
+            tensor_info_x = utils.build_tensor_info(self._input_op)
+            tensor_info_y = utils.build_tensor_info(self._output_op)
+            prediction_signature = signature_def_utils.build_signature_def(
+                inputs={'images': tensor_info_x},
+                outputs={'scores': tensor_info_y},
+                method_name=signature_constants.PREDICT_METHOD_NAME)
+            legacy_init_op = tf.group(tf.tables_initializer(), name='legacy_init_op')
+            builder.add_meta_graph_and_variables(
+                tf.Session(), [tag_constants.SERVING],
+                signature_def_map={
+                    'predict_images':prediction_signature,},
+                    legacy_init_op=legacy_init_op)
+            builder.save()
 
 """
 All tests must be written as started from CNNV3 directory
@@ -58,3 +82,5 @@ if __name__ == "__main__":
         print(ff)
         print(m.get_label(ff, new_size))
     m.close_session()
+    m.save_graph()
+    print("Graph Saved via Save Builder.")
